@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>足球打卡</title>
+<title>打卡</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
@@ -24,7 +24,7 @@ body {
 .container { width: 100%; max-width: 420px; padding: 20px 16px 100px; }
 
 /* Header */
-header { text-align: center; margin-bottom: 24px; }
+header { text-align: center; margin-bottom: 16px; }
 .nav {
   display: flex;
   align-items: center;
@@ -41,10 +41,30 @@ header { text-align: center; margin-bottom: 24px; }
 }
 .nav-btn:active { background: #e8e8e0; }
 #title { font-size: 20px; font-weight: 600; min-width: 120px; }
-.stats {
-  font-size: 14px; color: #888;
+
+/* Tab switcher */
+.tab-bar {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 16px;
 }
-.stats strong { color: #4a8c3f; font-size: 22px; font-weight: 700; }
+.tab-btn {
+  border: none; background: #fff;
+  padding: 8px 28px;
+  font-size: 15px; font-weight: 500;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-btn:first-child { border-radius: 20px 0 0 20px; }
+.tab-btn:last-child { border-radius: 0 20px 20px 0; }
+.tab-btn.active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px var(--accent-shadow); }
+
+.stats {
+  font-size: 14px; color: #888; text-align: center; margin-bottom: 4px;
+}
+.stats strong { color: var(--accent); font-size: 22px; font-weight: 700; }
 
 /* Weekday row */
 .weekdays {
@@ -91,18 +111,18 @@ header { text-align: center; margin-bottom: 24px; }
 .day-cell .dot {
   width: 8px; height: 8px;
   border-radius: 50%;
-  background: #4a8c3f;
+  background: var(--accent);
   margin-top: 2px;
   transition: transform 0.15s, opacity 0.15s;
 }
 .day-cell .dot.hidden { opacity: 0; transform: scale(0); }
 
 .day-cell.today {
-  background: #f0f7ed;
+  background: var(--accent-light);
   font-weight: 700;
 }
 .day-cell.today .date-num {
-  color: #4a8c3f;
+  color: var(--accent);
 }
 
 /* Year view */
@@ -138,7 +158,7 @@ header { text-align: center; margin-bottom: 24px; }
   border-radius: 3px;
   background: #f5f5f0;
 }
-.mini-cell.filled { background: #4a8c3f; }
+.mini-cell.filled { background: var(--accent); }
 .mini-cell.empty-bg { background: transparent; }
 
 .mini-month-stats {
@@ -172,11 +192,7 @@ footer {
 }
 .view-toggle:first-child { border-radius: 20px 0 0 20px; }
 .view-toggle:last-child { border-radius: 0 20px 20px 0; }
-.view-toggle.active {
-  background: #4a8c3f;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(74,140,63,0.3);
-}
+.view-toggle.active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px var(--accent-shadow); }
 
 .hidden { display: none !important; }
 
@@ -192,12 +208,16 @@ footer {
 </style>
 </head>
 <body>
-<div class="container">
+<div class="container" id="container">
   <header>
     <div class="nav">
       <button class="nav-btn" id="prevBtn" aria-label="上个月">‹</button>
       <h1 id="title"></h1>
       <button class="nav-btn" id="nextBtn" aria-label="下个月">›</button>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tabFootball">足球</button>
+      <button class="tab-btn" id="tabEnglish">英语</button>
     </div>
     <div class="stats" id="stats"></div>
   </header>
@@ -228,43 +248,62 @@ footer {
 
 <script>
 (function() {
-  var STORAGE_KEY = 'football_days';
+  // Tracker configs
+  var TRACKERS = {
+    football: {
+      label: '踢球',
+      storageKey: 'tracker_football',
+      color: '#4a8c3f',
+      colorLight: '#f0f7ed',
+      colorShadow: 'rgba(74,140,63,0.3)'
+    },
+    english: {
+      label: '英语',
+      storageKey: 'tracker_english',
+      color: '#4a7fb5',
+      colorLight: '#eef4f9',
+      colorShadow: 'rgba(74,127,181,0.3)'
+    }
+  };
 
   // State
-  var currentYear, currentMonth, viewMode;
-  var soccerDays = {};
+  var currentYear, currentMonth, viewMode, currentTracker;
+  var daysData = {}; // { football: { '2026-05-28': true, ... }, english: { ... } }
+
+  // Init daysData structure
+  function initDaysData() {
+    daysData = {};
+    for (var t in TRACKERS) {
+      daysData[t] = {};
+    }
+  }
 
   // Helpers
   function dateKey(y, m, d) {
     return y + '-' + pad(m + 1) + '-' + pad(d);
   }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function trackerConfig() { return TRACKERS[currentTracker]; }
 
-  function hasSoccer(y, m, d) { return soccerDays[dateKey(y, m, d)] === true; }
+  function hasChecked(y, m, d) {
+    return daysData[currentTracker][dateKey(y, m, d)] === true;
+  }
 
-  function toggleSoccer(y, m, d) {
+  function toggleDay(y, m, d) {
     var key = dateKey(y, m, d);
-    if (soccerDays[key]) {
-      delete soccerDays[key];
+    if (daysData[currentTracker][key]) {
+      delete daysData[currentTracker][key];
     } else {
-      soccerDays[key] = true;
+      daysData[currentTracker][key] = true;
     }
     saveData();
     render();
   }
 
-  function countMonthSoccer(y, m) {
+  function countMonthChecked(y, m) {
     var count = 0;
     for (var i = 1; i <= daysInMonth(y, m); i++) {
-      if (hasSoccer(y, m, i)) count++;
-    }
-    return count;
-  }
-
-  function countYearSoccer(y) {
-    var count = 0;
-    for (var key in soccerDays) {
-      if (soccerDays[key] && key.indexOf(y + '-') === 0) count++;
+      if (hasChecked(y, m, i)) count++;
     }
     return count;
   }
@@ -272,7 +311,6 @@ footer {
   function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
 
   function firstDayOffset(y, m) {
-    // 0=Sunday ... 6=Saturday → 0=Monday ... 6=Sunday
     var d = new Date(y, m, 1).getDay();
     return d === 0 ? 6 : d - 1;
   }
@@ -292,30 +330,67 @@ footer {
 
   // Storage
   function loadData() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        var arr = JSON.parse(raw);
-        soccerDays = {};
-        for (var i = 0; i < arr.length; i++) {
-          soccerDays[arr[i]] = true;
+    initDaysData();
+    for (var t in TRACKERS) {
+      var key = TRACKERS[t].storageKey;
+      try {
+        var raw = localStorage.getItem(key);
+        if (raw) {
+          var arr = JSON.parse(raw);
+          for (var i = 0; i < arr.length; i++) {
+            daysData[t][arr[i]] = true;
+          }
         }
+      } catch(e) {}
+    }
+    // Migrate old data
+    try {
+      var oldRaw = localStorage.getItem('football_days');
+      if (oldRaw && Object.keys(daysData.football).length === 0) {
+        var oldArr = JSON.parse(oldRaw);
+        for (var j = 0; j < oldArr.length; j++) {
+          daysData.football[oldArr[j]] = true;
+        }
+        saveTracker('football');
+        localStorage.removeItem('football_days');
       }
-    } catch(e) { soccerDays = {}; }
+    } catch(e) {}
+  }
+
+  function saveTracker(t) {
+    var arr = [];
+    for (var key in daysData[t]) {
+      if (daysData[t][key]) arr.push(key);
+    }
+    try {
+      localStorage.setItem(TRACKERS[t].storageKey, JSON.stringify(arr));
+    } catch(e) {}
   }
 
   function saveData() {
-    try {
-      var arr = [];
-      for (var key in soccerDays) {
-        if (soccerDays[key]) arr.push(key);
-      }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-    } catch(e) {}
+    saveTracker(currentTracker);
+  }
+
+  // Apply color theme
+  function applyTheme() {
+    var cfg = trackerConfig();
+    var el = document.getElementById('container');
+    el.style.setProperty('--accent', cfg.color);
+    el.style.setProperty('--accent-light', cfg.colorLight);
+    el.style.setProperty('--accent-shadow', cfg.colorShadow);
+  }
+
+  // Switch tracker
+  function switchTracker(t) {
+    if (currentTracker === t) return;
+    currentTracker = t;
+    applyTheme();
+    render();
   }
 
   // Render month view
   function renderMonthView() {
+    var cfg = trackerConfig();
     var title = document.getElementById('title');
     var stats = document.getElementById('stats');
     var grid = document.getElementById('calendarGrid');
@@ -323,19 +398,17 @@ footer {
 
     title.textContent = currentYear + '年' + (currentMonth + 1) + '月';
 
-    var count = countMonthSoccer(currentYear, currentMonth);
+    var count = countMonthChecked(currentYear, currentMonth);
     var total = daysInMonth(currentYear, currentMonth);
-    stats.innerHTML = '本月踢球 <strong>' + count + '</strong> / ' + total + ' 天';
+    stats.innerHTML = '本月' + cfg.label + ' <strong>' + count + '</strong> / ' + total + ' 天';
 
     var offset = firstDayOffset(currentYear, currentMonth);
     var totalDays = daysInMonth(currentYear, currentMonth);
 
     var html = '';
-    // Empty cells before month start
     for (var i = 0; i < offset; i++) {
       html += '<div class="day-cell empty"></div>';
     }
-    // Day cells
     for (var d = 1; d <= totalDays; d++) {
       var cls = 'day-cell';
       if (currentYear === today.year && currentMonth === today.month && d === today.day) {
@@ -344,20 +417,19 @@ footer {
       if (isFuture(currentYear, currentMonth, d)) {
         cls += ' future';
       }
-      var sport = hasSoccer(currentYear, currentMonth, d);
+      var checked = hasChecked(currentYear, currentMonth, d);
       html += '<div class="' + cls + '" data-day="' + d + '">';
       html += '<span class="date-num">' + d + '</span>';
-      html += '<span class="dot' + (sport ? '' : ' hidden') + '"></span>';
+      html += '<span class="dot' + (checked ? '' : ' hidden') + '"></span>';
       html += '</div>';
     }
 
     grid.innerHTML = html;
 
-    // Click handlers
     var cells = grid.querySelectorAll('.day-cell:not(.empty):not(.future)');
     for (var j = 0; j < cells.length; j++) {
       cells[j].addEventListener('click', (function(d) {
-        return function() { toggleSoccer(currentYear, currentMonth, d); };
+        return function() { toggleDay(currentYear, currentMonth, d); };
       })(parseInt(cells[j].getAttribute('data-day'))));
     }
   }
@@ -371,7 +443,7 @@ footer {
 
     var html = '';
     for (var m = 0; m < 12; m++) {
-      var count = countMonthSoccer(currentYear, m);
+      var count = countMonthChecked(currentYear, m);
       var offset = firstDayOffset(currentYear, m);
       var totalDays = daysInMonth(currentYear, m);
 
@@ -379,13 +451,11 @@ footer {
       html += '<div class="mini-month-name">' + (m + 1) + '月</div>';
       html += '<div class="mini-cal">';
 
-      // Padding cells
       for (var p = 0; p < offset; p++) {
         html += '<div class="mini-cell empty-bg"></div>';
       }
-      // Day cells
       for (var d = 1; d <= totalDays; d++) {
-        html += '<div class="mini-cell' + (hasSoccer(currentYear, m, d) ? ' filled' : '') + '"></div>';
+        html += '<div class="mini-cell' + (hasChecked(currentYear, m, d) ? ' filled' : '') + '"></div>';
       }
 
       html += '</div>';
@@ -395,7 +465,6 @@ footer {
 
     grid.innerHTML = html;
 
-    // Click handlers
     var months = grid.querySelectorAll('.mini-month');
     for (var j = 0; j < months.length; j++) {
       months[j].addEventListener('click', (function(m) {
@@ -416,6 +485,17 @@ footer {
     var yearToggle = document.getElementById('yearToggle');
     var prevBtn = document.getElementById('prevBtn');
     var nextBtn = document.getElementById('nextBtn');
+    var tabF = document.getElementById('tabFootball');
+    var tabE = document.getElementById('tabEnglish');
+
+    // Tab active state
+    if (currentTracker === 'football') {
+      tabF.classList.add('active');
+      tabE.classList.remove('active');
+    } else {
+      tabE.classList.add('active');
+      tabF.classList.remove('active');
+    }
 
     if (viewMode === 'month') {
       monthView.classList.remove('hidden');
@@ -459,6 +539,8 @@ footer {
     currentYear = today.year;
     currentMonth = today.month;
     viewMode = 'month';
+    currentTracker = 'football';
+    applyTheme();
 
     document.getElementById('prevBtn').addEventListener('click', prevMonth);
     document.getElementById('nextBtn').addEventListener('click', nextMonth);
@@ -470,6 +552,13 @@ footer {
     });
     document.getElementById('yearToggle').addEventListener('click', function() {
       viewMode = 'year'; render();
+    });
+
+    document.getElementById('tabFootball').addEventListener('click', function() {
+      switchTracker('football');
+    });
+    document.getElementById('tabEnglish').addEventListener('click', function() {
+      switchTracker('english');
     });
 
     // Swipe support
