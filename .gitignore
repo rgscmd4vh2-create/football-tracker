@@ -1,0 +1,4 @@
+.credentials/
+.claude/
+.DS_Store
+node_modules/
