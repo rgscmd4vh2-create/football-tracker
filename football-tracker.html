@@ -205,6 +205,40 @@ footer {
   margin-bottom: 16px;
 }
 .year-nav .nav-btn { width: 34px; height: 34px; font-size: 18px; }
+
+/* Backup */
+.backup-toggle {
+  display: block; margin: 20px auto 0;
+  border: none; background: transparent;
+  font-size: 13px; color: #bbb;
+  cursor: pointer; padding: 4px 12px;
+}
+.backup-panel { display: none; margin-top: 12px; }
+.backup-panel.show { display: block; }
+.backup-row {
+  display: flex; gap: 8px; margin-bottom: 8px;
+}
+.backup-btn {
+  flex: 1; border: none; background: #fff;
+  padding: 10px 0; border-radius: 10px;
+  font-size: 14px; font-weight: 500;
+  color: #555; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  transition: background 0.15s;
+}
+.backup-btn:active { background: #f0f0eb; }
+.backup-btn.primary { background: var(--accent); color: #fff; }
+.backup-btn.primary:active { opacity: 0.85; }
+.backup-textarea {
+  width: 100%; height: 60px; border: 1px solid #e0e0d8;
+  border-radius: 10px; padding: 10px; font-size: 13px;
+  resize: none; background: #fff; color: #555;
+  font-family: inherit; margin-bottom: 8px;
+}
+.backup-textarea::placeholder { color: #ccc; }
+.backup-hint {
+  font-size: 12px; color: #bbb; text-align: center; margin-top: 4px;
+}
 </style>
 </head>
 <body>
@@ -239,6 +273,16 @@ footer {
       <div class="year-grid" id="yearGrid"></div>
     </div>
   </main>
+
+  <button class="backup-toggle" id="backupToggle">备份与恢复</button>
+  <div class="backup-panel" id="backupPanel">
+    <div class="backup-row">
+      <button class="backup-btn primary" id="exportBtn">导出备份</button>
+      <button class="backup-btn" id="importBtn">恢复备份</button>
+    </div>
+    <textarea class="backup-textarea hidden" id="backupTextarea" placeholder="在此粘贴备份内容，再点「恢复备份」"></textarea>
+    <div class="backup-hint" id="backupHint"></div>
+  </div>
 
   <footer>
     <button class="view-toggle active" id="monthToggle">月视图</button>
@@ -532,6 +576,55 @@ footer {
   function prevYear() { currentYear--; render(); }
   function nextYear() { currentYear++; render(); }
 
+  // Backup
+  function exportBackup() {
+    var data = {};
+    for (var t in TRACKERS) {
+      var arr = [];
+      for (var k in daysData[t]) {
+        if (daysData[t][k]) arr.push(k);
+      }
+      data[t] = arr;
+    }
+    var encoded = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+
+    if (navigator.share) {
+      navigator.share({ text: encoded }).catch(function(){});
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = encoded; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      alert('备份内容已复制。请打开微信「文件传输助手」，粘贴发送保存。');
+    }
+  }
+
+  function importBackup() {
+    var textarea = document.getElementById('backupTextarea');
+    var text = textarea.value.trim();
+    if (!text) { alert('请先粘贴备份内容'); return; }
+    try {
+      var json = decodeURIComponent(escape(atob(text)));
+      var data = JSON.parse(json);
+      for (var t in TRACKERS) {
+        if (data[t] && Array.isArray(data[t])) {
+          daysData[t] = {};
+          for (var i = 0; i < data[t].length; i++) {
+            daysData[t][data[t][i]] = true;
+          }
+          saveTracker(t);
+        }
+      }
+      textarea.value = '';
+      textarea.classList.add('hidden');
+      document.getElementById('backupHint').textContent = '';
+      render();
+      alert('恢复成功');
+    } catch(e) {
+      alert('备份内容格式不对，请确认复制完整再试');
+    }
+  }
+
   // Init
   function init() {
     loadData();
@@ -559,6 +652,22 @@ footer {
     });
     document.getElementById('tabEnglish').addEventListener('click', function() {
       switchTracker('english');
+    });
+
+    document.getElementById('backupToggle').addEventListener('click', function() {
+      var panel = document.getElementById('backupPanel');
+      panel.classList.toggle('show');
+    });
+    document.getElementById('exportBtn').addEventListener('click', exportBackup);
+    document.getElementById('importBtn').addEventListener('click', function() {
+      var ta = document.getElementById('backupTextarea');
+      if (ta.classList.contains('hidden')) {
+        ta.classList.remove('hidden');
+        ta.focus();
+        document.getElementById('backupHint').textContent = '打开微信「文件传输助手」，复制之前的备份内容，粘贴到上方输入框，再点「恢复备份」';
+      } else {
+        importBackup();
+      }
     });
 
     // Swipe support
